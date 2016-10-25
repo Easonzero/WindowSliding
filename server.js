@@ -4,12 +4,13 @@
 const dgram = require('dgram');
 const server = dgram.createSocket('udp4');
 
-const WINDOWNUM = 6;
+const WINDOWNUM = 1;
 const SEQSIZE = 15;
 const TIMEOUT = 10;
 const users = {};
 
 const data = 'good good study,day day up!';
+const state = {s:0,data:[],num:0};
 
 server.on('listening', () => {
     var address = server.address();
@@ -62,11 +63,14 @@ server.on('message', (msg, info) => {
             console.log(`send ${buffer}`);
             server.send(buffer, info.port, info.address);
         }
-    }else if(cmd=='ack') {
+    }else if(/ack/.test(cmd)) {
         if(!users[info.address]) return;
+        let index = parseInt(cmd.match(/\d+/));
         console.log('window floating!');
-        users[info.address].startSeq++;
-        users[info.address].time = 0;
+        if(index > users[info.address].startSeq){
+            users[info.address].startSeq = index;
+            users[info.address].time = 0;
+        }
 
         if(users[info.address].startSeq==SEQSIZE){
             server.send(Buffer.from('finish'), info.port, info.address);
@@ -102,9 +106,19 @@ server.on('message', (msg, info) => {
             }
         }
 
-    }else {
-        server.send(msg, info.port, info.address);
+    }else if(/^\d+/.test(cmd)) {
+        state.num++;
+        let index = parseInt(cmd.match(/\d+/g));
+        if(index==1||state.data[index-1]&&state.num%10!=0) {
+            console.log(`Received msg:${msg}`);
+            state.data[index]=cmd;
+            server.send(Buffer.from(`ack${index}`), info.port, info.address);
+        }
+    }else if(cmd=='finish') {
+        state.num = 0;
+        console.log(`get all data from ${info.address}:${info.port}`);
     }
+    else server.send(msg, info.port, info.address);
 });
 
 setInterval(()=>{
